@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "VettaFinder",
+    "slug": "vettafinder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0E1620",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "it.demo.vettafinder",
+      "infoPlist": {
+        "NSCameraUsageDescription": "La fotocamera serve per mostrare i nomi delle cime in realtà aumentata.",
+        "NSLocationWhenInUseUsageDescription": "La posizione serve per calcolare quali cime vedi e dove si trovano.",
+        "NSMotionUsageDescription": "I sensori di movimento servono per capire dove punta il telefono."
+      }
+    },
+    "android": {
+      "package": "it.demo.vettafinder",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0E1620"
+      }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La fotocamera serve per mostrare i nomi delle cime in realtà aumentata."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "La posizione serve per calcolare quali cime vedi e dove si trovano."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "I sensori di movimento servono per capire dove punta il telefono."
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0E1620"
+    }
+  }
+}

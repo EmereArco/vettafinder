@@ -10,36 +10,41 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Verifica Android SDK
-        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME"
-
       - name: Installa dipendenze
         run: |
-          npm install --no-audit --no-fund
-          npx expo install --fix
+          set -o pipefail
+          npm install --no-audit --no-fund 2>&1 | tee install.log
+          npx expo install react react-native @expo/vector-icons expo-camera expo-location expo-sensors \
+            expo-status-bar react-native-safe-area-context react-native-svg react-native-webview 2>&1 | tee -a install.log
+          npx expo install --fix 2>&1 | tee -a install.log
+          cat package.json
 
       - name: Genera progetto Android
-        run: npx expo prebuild --platform android --clean --no-install
+        run: |
+          set -o pipefail
+          npx expo prebuild --platform android --clean --no-install 2>&1 | tee prebuild.log
 
       - name: Compila APK
         working-directory: android
         env:
           GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --console=plain 2>&1 | tee ../gradle.log
 
       - name: Rinomina APK
         run: cp android/app/build/outputs/apk/release/app-release.apk VettaFinder.apk
@@ -57,3 +62,19 @@ jobs:
           body: Scarica VettaFinder.apk dal telefono Android e aprilo per installarlo.
           files: VettaFinder.apk
           make_latest: true
+
+      # In caso di errore riporta le ultime righe dei log come annotazioni leggibili dall'API
+      - name: Riepilogo errore
+        if: failure()
+        run: |
+          for f in install.log prebuild.log gradle.log; do
+            [ -f "$f" ] || continue
+            grep -n -i -E "error|failed|what went wrong|ERESOLVE|exception" "$f" | tail -n 40 > err.txt || true
+            [ -s err.txt ] || tail -n 40 "$f" > err.txt
+            split -b 3500 err.txt part_
+            for p in part_*; do
+              msg=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g' -e 's/\r/%0D/g')
+              echo "::error title=$f::$msg"
+            done
+            rm -f part_* err.txt
+          done

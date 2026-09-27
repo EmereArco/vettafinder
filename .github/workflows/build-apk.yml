@@ -24,30 +24,33 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Installa dipendenze
+      - name: Crea progetto Expo e installa dipendenze
         run: |
           set -o pipefail
-          npm install --no-audit --no-fund 2>&1 | tee install.log
-          npx expo install react react-native @expo/vector-icons expo-camera expo-location expo-sensors \
-            expo-status-bar react-native-safe-area-context react-native-svg react-native-webview 2>&1 | tee -a install.log
-          npx expo install --fix 2>&1 | tee -a install.log
-          cat package.json
+          npx --yes create-expo-app@latest build --template blank-typescript --yes 2>&1 | tee install.log
+          cp -r App.tsx index.ts app.json src assets build/
+          cd build
+          npx expo install @expo/vector-icons expo-camera expo-location expo-sensors expo-status-bar \
+            react-native-safe-area-context react-native-svg react-native-webview 2>&1 | tee -a ../install.log
+          node -e "const p=require('./package.json');p.main='index.ts';require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
+          echo "::notice title=versioni::expo $(node -p "require('expo/package.json').version") / RN $(node -p "require('react-native/package.json').version")"
 
       - name: Genera progetto Android
+        working-directory: build
         run: |
           set -o pipefail
-          npx expo prebuild --platform android --clean --no-install 2>&1 | tee prebuild.log
+          npx expo prebuild --platform android --clean --no-install 2>&1 | tee ../prebuild.log
 
       - name: Compila APK
-        working-directory: android
+        working-directory: build/android
         env:
           GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         run: |
           set -o pipefail
-          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --console=plain 2>&1 | tee ../gradle.log
+          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --console=plain 2>&1 | tee ../../gradle.log
 
       - name: Rinomina APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk VettaFinder.apk
+        run: cp build/android/app/build/outputs/apk/release/app-release.apk VettaFinder.apk
 
       - uses: actions/upload-artifact@v4
         with:

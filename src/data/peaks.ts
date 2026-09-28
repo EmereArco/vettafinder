@@ -9,6 +9,9 @@ export type Peak = {
   area: string; // gruppo / sottosezione
   region: string; // Piemonte, Valle d'Aosta, Francia, Svizzera, Liguria, Lombardia
   source?: 'base' | 'osm';
+  prom?: number; // prominenza topografica (m), se nota
+  iso?: number; // isolamento: km dalla cima più alta più vicina
+  major?: boolean; // cima che "svetta": prominenza ≥ 600 m o isolamento ≥ 12 km
 };
 
 // Elenco scritto a mano: coordinate approssimate. In fase di build viene sostituito
@@ -156,6 +159,8 @@ function slug(s: string) {
     .replace(/(^-|-$)/g, '');
 }
 
+const MAJOR_HAND = new Set(['Monviso', 'Rocciamelone', 'Monte Argentera', 'Mont Ventoux', 'Mottarone', 'Bisalta', 'Monte Mucrone', 'Monte Marzo']);
+
 /** Elenco di riserva scritto a mano (usato se la build non riesce a scaricare OSM). */
 export const HAND_PEAKS: Peak[] = ROWS.map(([name, lat, lon, ele, area, region]) => ({
   id: slug(name),
@@ -166,6 +171,7 @@ export const HAND_PEAKS: Peak[] = ROWS.map(([name, lat, lon, ele, area, region])
   area,
   region,
   source: 'base',
+  major: ele >= 3500 || MAJOR_HAND.has(name),
 }));
 
 /** Cime usate dall'app: da OpenStreetMap (generate in fase di build) o, in mancanza, quelle a mano. */

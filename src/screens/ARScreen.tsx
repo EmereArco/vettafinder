@@ -8,13 +8,17 @@ import { PeakInfo, useApp } from '../state/AppState';
 import { angleDiff, cardinal, formatDistance, norm360, toDeg, toRad } from '../lib/geo';
 import { horizonAngle } from '../lib/terrain';
 import { useCameraPitch, useHeading } from '../lib/sensors';
+import { Tier, tierOf, TIER_STYLE } from '../lib/tiers';
+import TierBar from '../components/TierBar';
 import { C } from '../theme';
 
 const ROW_H = 30;
 
 export default function ARScreen() {
-  const { infos, horizon, horizonStatus, headingOffset, setHeadingOffset, arTarget, setArTarget, openPeak, viewpoint, gpsStatus } =
-    useApp();
+  const {
+    infos, horizon, horizonStatus, headingOffset, setHeadingOffset, arTarget, setArTarget, openPeak, viewpoint, gpsStatus,
+    profile, tiersOn,
+  } = useApp();
   const insets = useSafeAreaInsets();
   const [perm, requestPerm] = useCameraPermissions();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -45,33 +49,39 @@ export default function ARScreen() {
         i.dist < 200000 &&
         (i.visible === true || (i.visible === null && i.angle > -2 && i.dist < 120000)),
     );
-    cands.sort((a, b) => importance(b) - importance(a));
+    const tierById = new Map<string, Tier>();
+    for (const c of cands) tierById.set(c.peak.id, tierOf(c, profile));
+    const shown = cands.filter((c) => tiersOn[tierById.get(c.peak.id)!] || c.peak.id === arTarget?.id);
+    // Priorità di spazio: prima il livello 1, poi il 2, poi il 3
+    shown.sort((a, b) => tierById.get(a.peak.id)! - tierById.get(b.peak.id)! || importance(b) - importance(a));
+    const cands2 = shown;
     if (arTarget) {
-      const t = cands.findIndex((c) => c.peak.id === arTarget.id);
-      if (t > 0) cands.unshift(cands.splice(t, 1)[0]);
+      const t = cands2.findIndex((c) => c.peak.id === arTarget.id);
+      if (t > 0) cands2.unshift(cands2.splice(t, 1)[0]);
     }
     const rows: { brg: number; half: number }[][] = [];
-    const out: { c: PeakInfo; row: number; w: number }[] = [];
-    for (const c of cands.slice(0, 250)) {
-      const w = `${c.peak.name} ${c.peak.ele}`.length * 6.6 + 18;
+    const out: { c: PeakInfo; row: number; w: number; tier: Tier }[] = [];
+    for (const c of cands2.slice(0, 300)) {
+      const tier = tierById.get(c.peak.id)!;
+      const w = `${c.peak.name} ${c.peak.ele}`.length * TIER_STYLE[tier].fontSize * 0.56 + 16;
       const half = (w / 2 + 3) / pxPerDeg;
       let r = 0;
       while (r < 6 && (rows[r] ?? []).some((o) => Math.abs(angleDiff(o.brg, c.brg)) < o.half + half)) r++;
       if (r >= 6) continue;
       (rows[r] = rows[r] ?? []).push({ brg: c.brg, half });
-      out.push({ c, row: r, w });
+      out.push({ c, row: r, w, tier });
     }
     return out;
-  }, [infos, f, size.w, arTarget]);
+  }, [infos, f, size.w, arTarget, profile, tiersOn]);
 
   // --- Posizione a schermo (ogni fotogramma, solo proiezione) ---
   const labels = useMemo(() => {
     if (az == null || size.w === 0) return [];
-    const out: { c: PeakInfo; x: number; y: number; ly: number; w: number }[] = [];
+    const out: { c: PeakInfo; x: number; y: number; ly: number; w: number; tier: Tier }[] = [];
     for (const l of layout) {
       if (Math.abs(angleDiff(l.c.brg, az)) > hFov / 2 + 8) continue;
       const { x, y } = project(l.c.brg, l.c.angle);
-      out.push({ c: l.c, x, y, w: l.w, ly: Math.max(insets.top + 70, y - 46 - l.row * ROW_H) });
+      out.push({ c: l.c, x, y, w: l.w, tier: l.tier, ly: Math.max(insets.top + 70, y - 46 - l.row * ROW_H) });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,15 +158,17 @@ export default function ARScreen() {
             {horizonPath ? (
               <Path d={horizonPath} stroke="#FFFFFF" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="6 4" fill="none" />
             ) : null}
-            {labels.map(({ c, x, y, ly, w }) => {
+            {labels.map(({ c, x, y, ly, w, tier }) => {
               const isTarget = arTarget?.id === c.peak.id;
-              const color = isTarget ? C.accent2 : c.peak.ele >= 4000 ? C.accent : '#FFFFFF';
+              const ts = TIER_STYLE[tier];
+              const color = isTarget ? C.accent2 : tier === 1 && c.peak.ele >= 4000 ? C.accent : ts.color;
+              const hh = ts.fontSize + 9;
               return (
-                <G key={c.peak.id}>
-                  <Line x1={x} y1={ly + 11} x2={x} y2={y} stroke={color} strokeWidth={1.2} strokeOpacity={0.85} />
-                  <Circle cx={x} cy={y} r={3} fill={color} />
-                  <Rect x={x - w / 2} y={ly - 11} width={w} height={22} rx={11} fill="rgba(14,22,32,0.72)" stroke={color} strokeWidth={isTarget ? 2 : 0} />
-                  <SvgText x={x} y={ly + 4} fill={color} fontSize={12} fontWeight="bold" textAnchor="middle">
+                <G key={c.peak.id} opacity={isTarget ? 1 : ts.opacity}>
+                  <Line x1={x} y1={ly + hh / 2} x2={x} y2={y} stroke={color} strokeWidth={tier === 1 ? 1.4 : 1} strokeOpacity={0.85} />
+                  <Circle cx={x} cy={y} r={tier === 1 ? 3.5 : 2.5} fill={color} />
+                  <Rect x={x - w / 2} y={ly - hh / 2} width={w} height={hh} rx={hh / 2} fill={`rgba(14,22,32,${ts.bg})`} stroke={color} strokeWidth={isTarget ? 2 : 0} />
+                  <SvgText x={x} y={ly + ts.fontSize / 3} fill={color} fontSize={ts.fontSize} fontWeight={ts.bold ? 'bold' : 'normal'} textAnchor="middle">
                     {`${c.peak.name} ${c.peak.ele}`}
                   </SvgText>
                 </G>
@@ -198,6 +210,10 @@ export default function ARScreen() {
           <Text style={styles.tiltText}>Tieni il telefono in verticale verso le montagne</Text>
         </View>
       )}
+
+      <View style={styles.tierBar}>
+        <TierBar translucent />
+      </View>
 
       {/* Controlli */}
       <View style={styles.controls}>
@@ -274,5 +290,6 @@ const styles = StyleSheet.create({
   },
   ctrl: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.panel2, alignItems: 'center', justifyContent: 'center' },
   ctrlLabel: { color: C.text, fontWeight: '600', minWidth: 60, textAlign: 'center' },
+  tierBar: { position: 'absolute', bottom: 84, left: 0, right: 0 },
   hint: { position: 'absolute', bottom: 8, left: 12, right: 12, color: '#fff', fontSize: 11, textAlign: 'center', opacity: 0.8 },
 });

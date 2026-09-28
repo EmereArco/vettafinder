@@ -4,6 +4,7 @@ import { BASE_PEAKS, DEFAULT_VIEWPOINT, Peak } from '../data/peaks';
 import { bearing, distance, elevationAngle } from '../lib/geo';
 import { computeHorizon, Horizon, horizonKey, isPeakVisible } from '../lib/terrain';
 import { loadOsmPeaks, mergePeaks } from '../lib/osm';
+import { autoProfile, ProfileKey, Tier } from '../lib/tiers';
 
 export type Tab = 'map' | 'search' | 'ar' | 'panorama';
 
@@ -51,6 +52,11 @@ type Ctx = {
   showOnMap: (p: Peak) => void;
   arTarget: Peak | null;
   setArTarget: (p: Peak | null) => void;
+  profile: ProfileKey;
+  profileIsAuto: boolean;
+  setProfile: (p: ProfileKey | null) => void;
+  tiersOn: Record<Tier, boolean>;
+  toggleTier: (t: Tier) => void;
   headingOffset: number;
   setHeadingOffset: (n: number | ((o: number) => number)) => void;
 };
@@ -77,6 +83,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [mapFocus, setMapFocus] = useState<{ peak: Peak; ts: number } | null>(null);
   const [arTarget, setArTarget] = useState<Peak | null>(null);
   const [headingOffset, setHeadingOffset] = useState(0);
+  const [profileChoice, setProfileChoice] = useState<ProfileKey | null>(null);
+  const [tiersOn, setTiersOn] = useState<Record<Tier, boolean>>({ 1: true, 2: true, 3: true });
 
   // --- GPS ---
   useEffect(() => {
@@ -213,6 +221,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     arTarget,
     setArTarget,
+    profile: profileChoice ?? autoProfile(horizon ? horizon.eye : viewpoint.alt),
+    profileIsAuto: profileChoice == null,
+    setProfile: setProfileChoice,
+    tiersOn,
+    toggleTier: (t) => setTiersOn((o) => ({ ...o, [t]: !o[t] })),
     headingOffset,
     setHeadingOffset,
   };

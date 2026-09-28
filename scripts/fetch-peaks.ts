@@ -91,6 +91,7 @@ async function main() {
       area: '',
       region: regionOf(regions),
       source: 'base',
+      ...(parseEle(node.tags.prominence) != null ? { prom: Math.round(parseEle(node.tags.prominence)!) } : {}),
     });
   }
 
@@ -125,7 +126,44 @@ async function main() {
     }
   }
 
+  // --- Isolamento: distanza dalla cima più alta più vicina (griglia per velocità) ---
+  const CELL = 0.1; // gradi
+  const grid = new Map<string, Peak[]>();
+  const cellKey = (la: number, lo: number) => `${Math.floor(la / CELL)},${Math.floor(lo / CELL)}`;
+  for (const p of peaks) {
+    const k = cellKey(p.lat, p.lon);
+    (grid.get(k) ?? grid.set(k, []).get(k)!).push(p);
+  }
+  const MAX_ISO_KM = 60;
+  for (const p of peaks) {
+    let best = MAX_ISO_KM * 1000;
+    const cy = Math.floor(p.lat / CELL);
+    const cx = Math.floor(p.lon / CELL);
+    // anelli crescenti di celle finché non si trova una cima più alta più vicina
+    for (let r = 0; r <= 8; r++) {
+      if (r > 0 && (r - 1) * CELL * 78000 > best) break; // ~78 km per grado di longitudine qui
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          for (const q of grid.get(`${cy + dy},${cx + dx}`) ?? []) {
+            if (q.ele <= p.ele) continue;
+            const d = distance(p.lat, p.lon, q.lat, q.lon);
+            if (d < best) best = d;
+          }
+        }
+    }
+    p.iso = Math.round(best / 100) / 10;
+    p.major = (p.prom ?? 0) >= 600 || p.iso >= 12;
+  }
+
   peaks.sort((a, b) => b.ele - a.ele);
+  const majors = peaks.filter((p) => p.major);
+  console.log(
+    `::notice title=prominenti::${majors.length} cime prominenti (${peaks.filter((p) => p.prom != null).length} con prominenza OSM). Esempi: ${majors
+      .slice(0, 40)
+      .map((p) => `${p.name} ${p.ele}${p.prom != null ? ` P${p.prom}` : ''} I${p.iso}`)
+      .join('; ')}`,
+  );
   writeFileSync('src/data/peaks.generated.json', JSON.stringify(peaks));
 
   report.sort((a, b) => b.d - a.d);

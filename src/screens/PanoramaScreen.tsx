@@ -8,6 +8,8 @@ import { DEFAULT_VIEWPOINT } from '../data/peaks';
 import { angleDiff, cardinal, formatEle, norm360 } from '../lib/geo';
 import { BAND_LIMITS_KM, horizonAngle, Horizon } from '../lib/terrain';
 import { useHeading } from '../lib/sensors';
+import { Tier, tierOf, TIER_STYLE } from '../lib/tiers';
+import TierBar from '../components/TierBar';
 import { C } from '../theme';
 
 const COMPASS_H = 38;
@@ -15,7 +17,7 @@ const LABEL_ZONE = 150;
 const MAX_LABEL_DIST = 200000;
 
 export default function PanoramaScreen() {
-  const { viewpoint, horizon, horizonStatus, retryHorizon, infos, openPeak, setManualViewpoint, setTab, gps } = useApp();
+  const { viewpoint, horizon, horizonStatus, retryHorizon, infos, openPeak, setManualViewpoint, setTab, gps, profile, tiersOn } = useApp();
   const insets = useSafeAreaInsets();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [px, setPx] = useState(12); // pixel per grado
@@ -56,19 +58,32 @@ export default function PanoramaScreen() {
   const halfSpan = size.w / 2 / px + 1;
 
   // --- Etichette senza sovrapposizioni ---
-  const labels = useMemo(() => {
-    const inWin = candidates
-      .map((c) => ({ c, dx: angleDiff(c.brg, centerAz) }))
-      .filter((o) => Math.abs(o.dx) < halfSpan);
-    inWin.sort((a, b) => score(b.c) - score(a.c));
-    const chosen: { c: PeakInfo; x: number }[] = [];
-    for (const o of inWin) {
-      const x = size.w / 2 + o.dx * px;
-      if (chosen.every((k) => Math.abs(k.x - x) > 17)) chosen.push({ c: o.c, x });
-      if (chosen.length >= 40) break;
+  // Scelta stabile in spazio angolare (non cambia trascinando): prima livello 1, poi 2, poi 3.
+  const chosenAll = useMemo(() => {
+    const withTier = candidates
+      .map((c) => ({ c, tier: tierOf(c, profile) }))
+      .filter((o) => tiersOn[o.tier]);
+    withTier.sort((a, b) => a.tier - b.tier || score(b.c) - score(a.c));
+    const gapPx = (t: Tier) => TIER_STYLE[t].fontSize + 5;
+    const chosen: { c: PeakInfo; tier: Tier }[] = [];
+    for (const o of withTier) {
+      const ok = chosen.every(
+        (k) => Math.abs(angleDiff(k.c.brg, o.c.brg)) * px > (gapPx(k.tier) + gapPx(o.tier)) / 2,
+      );
+      if (ok) chosen.push(o);
+      if (chosen.length >= 400) break;
     }
     return chosen;
-  }, [candidates, centerAz, halfSpan, px, size.w]);
+  }, [candidates, px, profile, tiersOn]);
+
+  const labels = useMemo(
+    () =>
+      chosenAll
+        .map((o) => ({ ...o, dx: angleDiff(o.c.brg, centerAz) }))
+        .filter((o) => Math.abs(o.dx) < halfSpan)
+        .map((o) => ({ c: o.c, tier: o.tier, x: size.w / 2 + o.dx * px })),
+    [chosenAll, centerAz, halfSpan, px, size.w],
+  );
 
   // --- Gesti: trascina per ruotare, tocca un'etichetta per aprirla ---
   const st = useRef({ startCenter: 0, px, labels, size, centerAz });
@@ -186,19 +201,20 @@ export default function PanoramaScreen() {
               />
             )}
 
-            {labels.map(({ c, x }) => {
+            {labels.map(({ c, x, tier }) => {
               const y = yOf(c.angle);
               const top = Math.min(LABEL_ZONE - 10, y - 12);
-              const big = c.peak.ele >= 4000;
+              const ts = TIER_STYLE[tier];
+              const color = tier === 1 && c.peak.ele >= 4000 ? C.accent : ts.color;
               return (
-                <G key={c.peak.id}>
-                  <Line x1={x} y1={y - 2} x2={x} y2={top} stroke="#FFFFFF" strokeOpacity={0.7} strokeWidth={1} />
+                <G key={c.peak.id} opacity={ts.opacity}>
+                  <Line x1={x} y1={y - 2} x2={x} y2={top} stroke={color} strokeOpacity={0.7} strokeWidth={tier === 1 ? 1.2 : 0.8} />
                   <SvgText
                     x={x + 4}
                     y={top - 2}
-                    fill={big ? C.accent : '#FFFFFF'}
-                    fontSize={12}
-                    fontWeight={big ? 'bold' : 'normal'}
+                    fill={color}
+                    fontSize={ts.fontSize}
+                    fontWeight={ts.bold ? 'bold' : 'normal'}
                     transform={`rotate(-60 ${x + 4} ${top - 2})`}
                   >
                     {`${c.peak.name} ${c.peak.ele}`}
@@ -212,6 +228,9 @@ export default function PanoramaScreen() {
         )}
       </View>
 
+      <View style={{ paddingTop: 10 }}>
+        <TierBar />
+      </View>
       <View style={styles.toolbar}>
         <Tool icon="remove" onPress={() => setPx((p) => Math.max(5, p / 1.4))} />
         <Tool icon="add" onPress={() => setPx((p) => Math.min(40, p * 1.4))} />

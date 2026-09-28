@@ -31,8 +31,7 @@ export default function PeakSheet() {
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{selected.name}</Text>
               <Text style={styles.sub}>
-                {selected.area} · {selected.region}
-                {selected.source === 'osm' ? ' · OSM' : ''}
+                {[selected.area, selected.region].filter(Boolean).join(' · ')}
               </Text>
             </View>
             <Text style={styles.ele}>{formatEle(selected.ele)}</Text>

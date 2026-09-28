@@ -1,3 +1,5 @@
+import generated from './peaks.generated.json';
+
 export type Peak = {
   id: string;
   name: string;
@@ -9,8 +11,8 @@ export type Peak = {
   source?: 'base' | 'osm';
 };
 
-// Coordinate approssimate (±300 m) raccolte a mano per la demo.
-// Con il pulsante "Carica cime OSM" l'app aggiunge le cime di OpenStreetMap.
+// Elenco scritto a mano: coordinate approssimate. In fase di build viene sostituito
+// dalle cime di OpenStreetMap (scripts/fetch-peaks.ts), da cui prende nomi e gruppi.
 type Row = [string, number, number, number, string, string];
 
 const ROWS: Row[] = [
@@ -154,7 +156,8 @@ function slug(s: string) {
     .replace(/(^-|-$)/g, '');
 }
 
-export const BASE_PEAKS: Peak[] = ROWS.map(([name, lat, lon, ele, area, region]) => ({
+/** Elenco di riserva scritto a mano (usato se la build non riesce a scaricare OSM). */
+export const HAND_PEAKS: Peak[] = ROWS.map(([name, lat, lon, ele, area, region]) => ({
   id: slug(name),
   name,
   lat,
@@ -165,7 +168,10 @@ export const BASE_PEAKS: Peak[] = ROWS.map(([name, lat, lon, ele, area, region])
   source: 'base',
 }));
 
-export const REGIONS = ['Piemonte', "Valle d'Aosta", 'Confine IT/FR', 'Francia', 'Svizzera', 'Liguria'];
+/** Cime usate dall'app: da OpenStreetMap (generate in fase di build) o, in mancanza, quelle a mano. */
+export const BASE_PEAKS: Peak[] = (generated as Peak[]).length > 0 ? (generated as Peak[]) : HAND_PEAKS;
+
+export const REGIONS = ['Piemonte', "Valle d'Aosta", 'Confine IT/FR', 'Confine IT/CH', 'Francia', 'Svizzera', 'Liguria'];
 
 // Punto panoramico di default se il GPS non è disponibile: Monte dei Cappuccini, Torino
 export const DEFAULT_VIEWPOINT = {

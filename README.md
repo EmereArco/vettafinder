@@ -39,7 +39,8 @@ npx expo start
 ```
 App.tsx                    barra a schede
 .github/workflows/         compilazione automatica dell'APK
-src/data/peaks.ts          ~110 cime (Piemonte, VdA, Francia, confine CH)
+src/data/peaks.ts          elenco di riserva + caricamento delle cime OSM
+scripts/fetch-peaks.ts     scarica le cime da OpenStreetMap in fase di build
 src/lib/geo.ts             distanza, azimut, angolo con curvatura e rifrazione
 src/lib/terrain.ts         profilo dell'orizzonte da DEM + test di visibilità
 src/lib/osm.ts             cime aggiuntive da OpenStreetMap (Overpass)
@@ -51,7 +52,7 @@ src/components/PeakSheet   scheda della cima
 
 ## Limiti della demo
 
-- **Coordinate delle cime** inserite a mano: precisione ±300 m. Per dati migliori usa il pulsante OSM sulla mappa.
+- **Cime**: scaricate da OpenStreetMap a ogni build (Piemonte, VdA, Liguria, Alpi francesi, Vallese; solo cime con nome e quota). Se OSM non risponde si usa l'elenco di riserva scritto a mano.
 - **Terreno**: ~60 tessere PNG di altitudine (AWS Terrain Tiles, zoom 11 vicino e 9 lontano), 720 raggi × 64 campioni fino a 160 km. Serve internet; le tessere restano in cache per la sessione.
 - **Bussola in AR**: la precisione dipende dal telefono; su alcuni Android con il telefono verticale la direzione può essere sfalsata. Trascina di lato per correggere (↻ azzera). Rollio (telefono storto) non compensato.
 - **Campo visivo**: 60° verticali di default; regolalo con +/- finché i nomi combaciano con le cime.

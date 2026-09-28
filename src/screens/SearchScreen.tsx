@@ -98,7 +98,7 @@ function Row({ info, onPress }: { info: PeakInfo; onPress: () => void }) {
           {peak.name}
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
-          {peak.area} · {peak.region}
+          {[peak.area, peak.region].filter(Boolean).join(' · ')}
         </Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>

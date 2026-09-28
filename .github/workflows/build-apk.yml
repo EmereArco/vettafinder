@@ -35,6 +35,15 @@ jobs:
           node -e "const p=require('./package.json');p.main='index.ts';require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
           echo "::notice title=versioni::expo $(node -p "require('expo/package.json').version") / RN $(node -p "require('react-native/package.json').version")"
 
+      - name: Scarica le cime da OpenStreetMap
+        working-directory: build
+        run: npx --yes tsx scripts/fetch-peaks.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: peaks-json
+          path: build/src/data/peaks.generated.json
+
       - name: Test del terreno (Torino)
         working-directory: build
         run: npx --yes tsx scripts/test-terrain.ts

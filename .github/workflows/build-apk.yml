@@ -44,6 +44,16 @@ jobs:
           name: peaks-json
           path: build/src/data/peaks.generated.json
 
+      - name: Test Overpass con e senza nome d'app
+        run: |
+          Q='data=%5Bout%3Ajson%5D%3Bnode%5B%22natural%22%3D%22peak%22%5D(44.6,7.0,44.7,7.1)%3Bout%201%3B'
+          for ua in "okhttp/4.12.0" "VettaFinder/1.0 (app Android; github.com/EmereArco/vettafinder)"; do
+            for u in https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
+              c=$(curl -s -o /dev/null -w "%{http_code}" -m 40 -A "$ua" -H "Accept: application/json" -d "$Q" "$u")
+              echo "::notice title=overpass::$c  UA=$ua  $u"
+            done
+          done
+
       - name: Test del terreno (Torino)
         working-directory: build
         run: npx --yes tsx scripts/test-terrain.ts

@@ -1,7 +1,18 @@
 import type { Peak } from '../data/peaks';
 import { distance, normalizeText } from './geo';
 
-const OVERPASS = 'https://overpass-api.de/api/interpreter';
+// Più server Overpass: se uno rifiuta o è occupato si prova il successivo.
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+// Overpass rifiuta (406/429) le richieste anonime: ci si presenta con un nome d'app.
+const HEADERS = {
+  'Content-Type': 'application/x-www-form-urlencoded',
+  Accept: 'application/json',
+  'User-Agent': 'VettaFinder/1.0 (app Android; github.com/EmereArco/vettafinder)',
+};
 
 function parseEle(raw?: string): number | null {
   if (!raw) return null;
@@ -22,13 +33,22 @@ export async function loadOsmPeaks(lat: number, lon: number, radiusKm = 50, minE
   const dLon = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
   const bbox = `${lat - dLat},${lon - dLon},${lat + dLat},${lon + dLon}`;
   const query = `[out:json][timeout:40];node["natural"="peak"]["name"]["ele"](${bbox});out body;`;
-  const res = await fetch(OVERPASS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(query),
-  });
-  if (!res.ok) throw new Error(`OpenStreetMap non risponde (${res.status})`);
-  const json = await res.json();
+  let json: any = null;
+  const errors: string[] = [];
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetch(url, { method: 'POST', headers: HEADERS, body: 'data=' + encodeURIComponent(query) });
+      if (!res.ok) {
+        errors.push(`${url.split("/")[2]} ${res.status}`);
+        continue;
+      }
+      json = await res.json();
+      break;
+    } catch (e: any) {
+      errors.push(`${url.split("/")[2]} ${e?.message ?? 'errore di rete'}`);
+    }
+  }
+  if (!json) throw new Error(`OpenStreetMap non risponde (${errors.join(', ')})`);
   const out: Peak[] = [];
   for (const el of json.elements ?? []) {
     const ele = parseEle(el.tags?.ele);

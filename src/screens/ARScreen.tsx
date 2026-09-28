@@ -6,8 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PeakInfo, useApp } from '../state/AppState';
 import { angleDiff, cardinal, formatDistance, norm360, toDeg, toRad } from '../lib/geo';
-import { horizonAngle } from '../lib/terrain';
-import { useCameraPitch, useHeading } from '../lib/sensors';
+import { BAND_LIMITS_KM, horizonAngle } from '../lib/terrain';
+import { useOrientation } from '../lib/orientation';
 import { Tier, tierOf, TIER_STYLE } from '../lib/tiers';
 import TierBar from '../components/TierBar';
 import { C } from '../theme';
@@ -23,17 +23,27 @@ export default function ARScreen() {
   const [perm, requestPerm] = useCameraPermissions();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [vFov, setVFov] = useState(60); // campo visivo verticale (lato lungo) in gradi
-  const { heading, accuracy } = useHeading(true);
-  const pitch = useCameraPitch(true);
+  const ori = useOrientation(true);
+  const heading = ori.azimuth;
+  const pitch = ori.pitch;
+  const roll = ori.roll;
+  const [ridgesOn, setRidgesOn] = useState(true);
 
   const az = heading != null ? norm360(heading + headingOffset) : null;
   const f = size.h / 2 / Math.tan(toRad(vFov / 2)); // lunghezza focale in pixel
   const hFov = size.w > 0 ? 2 * toDeg(Math.atan(size.w / 2 / f)) : 30;
+  // La sovrapposizione è un quadrato grande quanto la diagonale, ruotato col rollio del telefono:
+  // così resta allineata alle montagne anche col telefono storto, senza angoli scoperti.
+  const D = Math.ceil(Math.hypot(size.w, size.h));
+  const cx = D / 2;
+  const cy = D / 2;
+  const topY = cy - size.h / 2; // bordo superiore dello schermo nel sistema della sovrapposizione
+  const spanFov = size.w > 0 ? 2 * toDeg(Math.atan(D / 2 / f)) : 40; // campo coperto dalla sovrapposizione
 
   const project = (brg: number, angle: number) => {
     const dAz = angleDiff(brg, az ?? 0);
-    const x = size.w / 2 + f * Math.tan(toRad(dAz));
-    const y = size.h / 2 - f * Math.tan(toRad(angle - pitch));
+    const x = cx + f * Math.tan(toRad(dAz));
+    const y = cy - f * Math.tan(toRad(angle - pitch));
     return { x, y, dAz };
   };
 
@@ -79,33 +89,41 @@ export default function ARScreen() {
     if (az == null || size.w === 0) return [];
     const out: { c: PeakInfo; x: number; y: number; ly: number; w: number; tier: Tier }[] = [];
     for (const l of layout) {
-      if (Math.abs(angleDiff(l.c.brg, az)) > hFov / 2 + 8) continue;
+      if (Math.abs(angleDiff(l.c.brg, az)) > spanFov / 2 + 4) continue;
       const { x, y } = project(l.c.brg, l.c.angle);
-      out.push({ c: l.c, x, y, w: l.w, tier: l.tier, ly: Math.max(insets.top + 70, y - 46 - l.row * ROW_H) });
+      out.push({ c: l.c, x, y, w: l.w, tier: l.tier, ly: Math.max(topY + insets.top + 70, y - 46 - l.row * ROW_H) });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, az, pitch, size, vFov]);
 
-  // --- Linea dell'orizzonte dal DEM ---
-  const horizonPath = useMemo(() => {
-    if (!horizon || az == null || size.w === 0) return '';
-    let d = '';
-    for (let o = -hFov / 2 - 2; o <= hFov / 2 + 2; o += 0.5) {
-      const a = norm360(az + o);
-      const { x, y } = project(a, horizonAngle(horizon, a));
-      d += `${d ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
-    }
-    return d;
+  // --- Creste dal modello del terreno, a piani (dal più lontano al più vicino) ---
+  const ridgePaths = useMemo(() => {
+    if (!horizon || az == null || size.w === 0 || !ridgesOn) return [];
+    const bands = [...BAND_LIMITS_KM].reverse();
+    return bands.map((km, i) => {
+      let d = '';
+      let prevY = 0;
+      for (let o = -spanFov / 2 - 1; o <= spanFov / 2 + 1; o += 0.5) {
+        const a = norm360(az + o);
+        const { x, y } = project(a, horizonAngle(horizon, a, km * 1000));
+        // interrompi la linea dove la cresta vicina sparisce sotto quella lontana (salti bruschi)
+        const jump = d && Math.abs(y - prevY) > size.h * 0.25;
+        d += `${!d || jump ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+        prevY = y;
+      }
+      return { key: km, d, far: i };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [horizon, az, pitch, size, vFov]);
+  }, [horizon, az, pitch, size, vFov, ridgesOn]);
 
   // --- Calibrazione: trascina in orizzontale per allineare la bussola ---
-  const st = useRef({ start: 0, hFov, w: size.w, offset: headingOffset, labels });
+  const st = useRef({ start: 0, hFov, w: size.w, offset: headingOffset, labels, h: 0, D: 0, roll: 0 });
   st.current.hFov = hFov;
   st.current.w = size.w;
   st.current.offset = headingOffset;
   st.current.labels = labels;
+  Object.assign(st.current, { h: size.h, D, roll });
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -119,8 +137,15 @@ export default function ARScreen() {
       onPanResponderRelease: (e, g) => {
         if (Math.abs(g.dx) < 6 && Math.abs(g.dy) < 6) {
           const { locationX, locationY } = e.nativeEvent;
+          // porta il tocco nel sistema ruotato della sovrapposizione
+          const { w, h, D, roll } = st.current;
+          const r = toRad(-roll);
+          const px = locationX - w / 2;
+          const py = locationY - h / 2;
+          const tx = px * Math.cos(r) - py * Math.sin(r) + D / 2;
+          const ty = px * Math.sin(r) + py * Math.cos(r) + D / 2;
           const hit = st.current.labels.find(
-            (l) => Math.abs(l.x - locationX) < l.w / 2 && Math.abs(l.ly - locationY) < ROW_H / 2 + 4,
+            (l) => Math.abs(l.x - tx) < l.w / 2 + 4 && Math.abs(l.ly - ty) < ROW_H / 2 + 4,
           );
           if (hit) openPeak(hit.c.peak);
         }
@@ -152,12 +177,29 @@ export default function ARScreen() {
   return (
     <View style={styles.flex} onLayout={onLayout}>
       <CameraView style={StyleSheet.absoluteFill} facing="back" />
-      <View style={StyleSheet.absoluteFill} {...pan.panHandlers}>
+      <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} {...pan.panHandlers}>
         {size.w > 0 && az != null && (
-          <Svg width={size.w} height={size.h}>
-            {horizonPath ? (
-              <Path d={horizonPath} stroke="#FFFFFF" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="6 4" fill="none" />
-            ) : null}
+          <Svg
+            width={D}
+            height={D}
+            style={{
+              position: 'absolute',
+              left: (size.w - D) / 2,
+              top: (size.h - D) / 2,
+              transform: [{ rotate: `${roll.toFixed(2)}deg` }],
+            }}
+          >
+            {ridgePaths.map((r) => (
+              <Path
+                key={r.key}
+                d={r.d}
+                stroke="#FFFFFF"
+                strokeOpacity={0.35 + r.far * 0.15}
+                strokeWidth={0.8 + r.far * 0.5}
+                strokeDasharray={r.far === 0 ? '4 4' : undefined}
+                fill="none"
+              />
+            ))}
             {labels.map(({ c, x, y, ly, w, tier }) => {
               const isTarget = arTarget?.id === c.peak.id;
               const ts = TIER_STYLE[tier];
@@ -187,7 +229,7 @@ export default function ARScreen() {
             {headingOffset !== 0 ? ` · corr. ${headingOffset > 0 ? '+' : ''}${headingOffset.toFixed(1)}°` : ''}
           </Text>
           {horizonStatus.loading && <Text style={styles.hudSmall}>Calcolo terreno {Math.round(horizonStatus.progress * 100)}%…</Text>}
-          {compassPoor(accuracy) && <Text style={[styles.hudSmall, { color: C.warn }]}>Bussola imprecisa: muovi il telefono a ∞</Text>}
+          {!ori.magOk && <Text style={[styles.hudSmall, { color: C.warn }]}>Disturbo magnetico: allontanati da metallo o magneti</Text>}
           {gpsStatus === 'denied' && <Text style={[styles.hudSmall, { color: C.warn }]}>GPS negato: uso {viewpoint.label}</Text>}
         </View>
       </View>
@@ -222,15 +264,11 @@ export default function ARScreen() {
         <Ctrl icon="add" onPress={() => setVFov((v) => Math.max(20, v - 3))} />
         <View style={{ width: 12 }} />
         <Ctrl icon="refresh" onPress={() => setHeadingOffset(0)} />
+        <Ctrl icon={ridgesOn ? 'analytics' : 'analytics-outline'} onPress={() => setRidgesOn((r) => !r)} />
       </View>
       <Text style={styles.hint}>Trascina di lato per allineare i nomi alle cime · tocca un nome per i dettagli</Text>
     </View>
   );
-}
-
-// Android: livello 0–3 (3 = ottimo). iOS: errore in gradi.
-function compassPoor(acc: number) {
-  return Platform.OS === 'android' ? acc <= 1 : acc < 0 || acc > 25;
 }
 
 function importance(i: PeakInfo) {

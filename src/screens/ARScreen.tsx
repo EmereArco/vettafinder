@@ -33,38 +33,49 @@ export default function ARScreen() {
     return { x, y, dAz };
   };
 
-  // --- Etichette ---
-  const labels = useMemo(() => {
-    if (az == null || size.w === 0) return [];
+  // --- Disposizione stabile delle etichette ---
+  // Le righe si calcolano una volta sola in "spazio angolare" (non dipendono da dove
+  // punta il telefono), così i nomi non saltano da una riga all'altra muovendosi.
+  const layout = useMemo(() => {
+    if (size.w === 0) return [];
+    const pxPerDeg = f * toRad(1);
     const cands = infos.filter(
       (i) =>
         i.dist > 100 &&
         i.dist < 200000 &&
-        (i.visible === true || (i.visible === null && i.angle > -2 && i.dist < 120000)) &&
-        Math.abs(angleDiff(i.brg, az)) < hFov / 2 + 3,
+        (i.visible === true || (i.visible === null && i.angle > -2 && i.dist < 120000)),
     );
     cands.sort((a, b) => importance(b) - importance(a));
     if (arTarget) {
       const t = cands.findIndex((c) => c.peak.id === arTarget.id);
       if (t > 0) cands.unshift(cands.splice(t, 1)[0]);
     }
-    const rows: [number, number][][] = [];
-    const out: { c: PeakInfo; x: number; y: number; ly: number; w: number }[] = [];
-    for (const c of cands.slice(0, 40)) {
-      const { x, y } = project(c.brg, c.angle);
-      const text = `${c.peak.name} ${c.peak.ele}`;
-      const w = text.length * 6.6 + 18;
-      const x0 = x - w / 2;
-      const x1 = x + w / 2;
+    const rows: { brg: number; half: number }[][] = [];
+    const out: { c: PeakInfo; row: number; w: number }[] = [];
+    for (const c of cands.slice(0, 250)) {
+      const w = `${c.peak.name} ${c.peak.ele}`.length * 6.6 + 18;
+      const half = (w / 2 + 3) / pxPerDeg;
       let r = 0;
-      while (r < 6 && (rows[r] ?? []).some(([a, b]) => !(x1 + 4 < a || x0 - 4 > b))) r++;
+      while (r < 6 && (rows[r] ?? []).some((o) => Math.abs(angleDiff(o.brg, c.brg)) < o.half + half)) r++;
       if (r >= 6) continue;
-      (rows[r] = rows[r] ?? []).push([x0, x1]);
-      out.push({ c, x, y, ly: Math.max(insets.top + 70, y - 46 - r * ROW_H), w });
+      (rows[r] = rows[r] ?? []).push({ brg: c.brg, half });
+      out.push({ c, row: r, w });
+    }
+    return out;
+  }, [infos, f, size.w, arTarget]);
+
+  // --- Posizione a schermo (ogni fotogramma, solo proiezione) ---
+  const labels = useMemo(() => {
+    if (az == null || size.w === 0) return [];
+    const out: { c: PeakInfo; x: number; y: number; ly: number; w: number }[] = [];
+    for (const l of layout) {
+      if (Math.abs(angleDiff(l.c.brg, az)) > hFov / 2 + 8) continue;
+      const { x, y } = project(l.c.brg, l.c.angle);
+      out.push({ c: l.c, x, y, w: l.w, ly: Math.max(insets.top + 70, y - 46 - l.row * ROW_H) });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [infos, az, pitch, size, vFov, arTarget]);
+  }, [layout, az, pitch, size, vFov]);
 
   // --- Linea dell'orizzonte dal DEM ---
   const horizonPath = useMemo(() => {

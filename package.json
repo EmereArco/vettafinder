@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "~54.0.0"
+    "expo": "~54.0.0",
+    "upng-js": "^2.1.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

@@ -28,12 +28,16 @@ jobs:
         run: |
           set -o pipefail
           npx --yes create-expo-app@latest build --template blank-typescript --yes 2>&1 | tee install.log
-          cp -r App.tsx index.ts app.json src assets build/
+          cp -r App.tsx index.ts app.json src assets scripts build/
           cd build
           npx expo install @expo/vector-icons expo-camera expo-location expo-sensors expo-status-bar \
-            react-native-safe-area-context react-native-svg react-native-webview 2>&1 | tee -a ../install.log
+            react-native-safe-area-context react-native-svg react-native-webview upng-js 2>&1 | tee -a ../install.log
           node -e "const p=require('./package.json');p.main='index.ts';require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
           echo "::notice title=versioni::expo $(node -p "require('expo/package.json').version") / RN $(node -p "require('react-native/package.json').version")"
+
+      - name: Test del terreno (Torino)
+        working-directory: build
+        run: npx --yes tsx scripts/test-terrain.ts
 
       - name: Genera progetto Android
         working-directory: build

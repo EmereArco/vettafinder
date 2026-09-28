@@ -5,7 +5,6 @@ import { distance, normalizeText } from './geo';
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 // Overpass rifiuta (406/429) le richieste anonime: ci si presenta con un nome d'app.
 const HEADERS = {

@@ -113,14 +113,16 @@ async function main() {
       }
     }
     if (!best) {
-      missing.push(h.name);
-      peaks.push(h); // la teniamo com'è
+      missing.push(h.name); // scartata: meglio nessuna cima che una nel posto sbagliato
       continue;
     }
     const d = distance(h.lat, h.lon, best.lat, best.lon);
     report.push({ name: h.name, d, dEle: best.ele - h.ele });
-    best.area = h.area; // il gruppo montuoso non c'è in OSM
-    best.name = h.name; // nome italiano/comune scelto a mano
+    // Stessa cima certa (nome simile e quota quasi uguale): prendo il nome comune e il gruppo.
+    if (sameName(h.name, best.name) && Math.abs(best.ele - h.ele) <= 60) {
+      best.area = h.area;
+      best.name = h.name;
+    }
   }
 
   peaks.sort((a, b) => b.ele - a.ele);
